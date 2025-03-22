@@ -45,6 +45,7 @@ const CreateEventArgumentsSchema = z.object({
     email: z.string()
   })).optional(),
   location: z.string().optional(),
+  colorId: z.string().optional().describe("The color ID for the event, e.g., '1' for Lavender, '2' for Sage, etc."),
 });
 
 const UpdateEventArgumentsSchema = z.object({
@@ -58,6 +59,7 @@ const UpdateEventArgumentsSchema = z.object({
     email: z.string()
   })).optional(),
   location: z.string().optional(),
+  colorId: z.string().optional().describe("The color ID for the event, e.g., '1' for Lavender, '2' for Sage, etc."),
 });
 
 const DeleteEventArgumentsSchema = z.object({
@@ -322,6 +324,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["calendarId", "eventId"],
         },
       },
+      {
+        name: "list-event-colors",
+        description: "List available event colors",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      },
     ],
   };
 });
@@ -435,7 +446,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{
             type: "text",
-            text: `Event deleted successfully`
+            text: 'Event deleted successfully'
+          }]
+        };
+      }
+
+      case "list-event-colors": {
+        const response = await calendar.colors.get();
+        const eventColors = response.data.event || {};
+        const colorsList = Object.entries(eventColors).map(([id, color]) => 
+          `ID: ${id}, Background: ${color.background}, Foreground: ${color.foreground}`
+        ).join('\n');
+        return {
+          content: [{
+            type: "text",
+            text: colorsList || 'No event colors available'
           }]
         };
       }
