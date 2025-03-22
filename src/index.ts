@@ -21,11 +21,24 @@ interface CalendarEvent {
   end?: { dateTime?: string | null; date?: string | null; };
   location?: string | null;
   attendees?: CalendarEventAttendee[] | null;
+  colorId?: string | null;
 }
 
 interface CalendarEventAttendee {
   email?: string | null;
   responseStatus?: string | null;
+}
+
+interface ColorDefinition {
+  background: string;
+  foreground: string;
+}
+
+interface Colors {
+  kind: "calendar#colors";
+  updated: string;
+  calendar: { [key: string]: ColorDefinition };
+  event: { [key: string]: ColorDefinition };
 }
 
 // Define Zod schemas for validation
@@ -249,6 +262,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 },
                 required: ["email"]
               }
+            },
+            colorId: {
+              type: "string",
+              description: "The color ID for the event (e.g., '1' for Lavender). Use list-colors to see available colors."
             }
           },
           required: ["calendarId", "summary", "start", "end"],
@@ -301,6 +318,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 },
                 required: ["email"]
               }
+            },
+            colorId: {
+              type: "string",
+              description: "The color ID for the event (e.g., '1' for Lavender). Use list-colors to see available colors."
             }
           },
           required: ["calendarId", "eventId"],
@@ -325,8 +346,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: "list-event-colors",
-        description: "List available event colors",
+        name: "list-colors",
+        description: "List available colors for both calendars and events",
         inputSchema: {
           type: "object",
           properties: {},
@@ -385,7 +406,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     `${a.email || 'no-email'} (${a.responseStatus || 'unknown'})`).join(', ')}`
                 : '';
               const locationInfo = event.location ? `\nLocation: ${event.location}` : '';
-              return `${event.summary || 'Untitled'} (${event.id || 'no-id'})${locationInfo}\nStart: ${event.start?.dateTime || event.start?.date || 'unspecified'}\nEnd: ${event.end?.dateTime || event.end?.date || 'unspecified'}${attendeeList}\n`;
+              const colorInfo = event.colorId ? `\nColor: ${event.colorId}` : '';
+              return `${event.summary || 'Untitled'} (${event.id || 'no-id'})${locationInfo}${colorInfo}\nStart: ${event.start?.dateTime || event.start?.date || 'unspecified'}\nEnd: ${event.end?.dateTime || event.end?.date || 'unspecified'}${attendeeList}\n`;
             }).join('\n')
           }]
         };
@@ -402,6 +424,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             end: { dateTime: validArgs.end },
             attendees: validArgs.attendees,
             location: validArgs.location,
+            colorId: validArgs.colorId,
           },
         }).then(response => response.data);
         
@@ -425,6 +448,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             end: validArgs.end ? { dateTime: validArgs.end } : undefined,
             attendees: validArgs.attendees,
             location: validArgs.location,
+            colorId: validArgs.colorId,
           },
         }).then(response => response.data);
         
@@ -451,16 +475,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case "list-event-colors": {
+      case "list-colors": {
         const response = await calendar.colors.get();
-        const eventColors = response.data.event || {};
-        const colorsList = Object.entries(eventColors).map(([id, color]) => 
-          `ID: ${id}, Background: ${color.background}, Foreground: ${color.foreground}`
-        ).join('\n');
+        const colors = response.data as Colors;
+        
+        // Verify the response matches expected format
+        if (colors.kind !== "calendar#colors") {
+          throw new Error("Invalid color data received from Google Calendar API");
+        }
+
+        const formatColorSection = (title: string, colors: { [key: string]: ColorDefinition }) => {
+          if (!colors || Object.keys(colors).length === 0) {
+            return `${title}:\n  No colors available`;
+          }
+          return `${title}:\n${Object.entries(colors)
+            .map(([id, color]) => 
+              `  ID: ${id}\n    Background: ${color.background}\n    Foreground: ${color.foreground}`
+            ).join('\n')}`;
+        };
+
+        const sections = [
+          `Last Updated: ${new Date(colors.updated).toISOString()}`, // Use ISO format for RFC3339
+          formatColorSection('Calendar Colors', colors.calendar),
+          formatColorSection('Event Colors', colors.event)
+        ];
+
         return {
           content: [{
             type: "text",
-            text: colorsList || 'No event colors available'
+            text: sections.join('\n\n')
           }]
         };
       }
